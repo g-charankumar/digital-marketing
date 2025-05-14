@@ -5,7 +5,7 @@ app = Flask(__name__)
 
 # Load the dataset
 def load_dataset():
-    return pd.read_csv("path_to_your_csv_file.csv")
+    return pd.read_csv("restro.csv")
 
 @app.route('/get_data', methods=['GET'])
 def get_data():
