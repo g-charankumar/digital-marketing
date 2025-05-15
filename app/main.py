@@ -1,12 +1,23 @@
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import os
 from functools import lru_cache
+from typing import List, Dict, Any
 
 app = FastAPI(title="Multi-Niche Dataset API")
 
+# Enable CORS (adjust origins as needed)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Change to your domain(s) for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, 'data')  # Folder where CSVs are stored
+DATA_DIR = os.path.join(BASE_DIR, 'data')  # Folder where CSV files are stored
 
 @lru_cache(maxsize=10)
 def load_data_for_niche(niche: str) -> pd.DataFrame:
@@ -20,7 +31,6 @@ def load_data_for_niche(niche: str) -> pd.DataFrame:
     df = pd.read_csv(filepath)
     df.columns = [col.lower() for col in df.columns]
 
-    # Add 'id' column if missing
     if 'id' not in df.columns:
         df.reset_index(inplace=True)
         df.rename(columns={'index': 'id'}, inplace=True)
@@ -32,11 +42,19 @@ def load_data_for_niche(niche: str) -> pd.DataFrame:
 def root():
     return {
         "message": "Welcome to Multi-Niche Dataset API.",
-        "usage": "Use /records?niche=your_niche to fetch data, or /records/{niche}/{end_id} to fetch records from 1 to end_id."
+        "usage": "Use /records/{niche}?limit=your_limit to fetch data."
     }
 
-@app.get("/records/{niche}")
-def get_all_records(niche: str):
+@app.get("/records/{niche}", response_model=List[Dict[str, Any]])
+def get_records(
+    niche: str,
+    limit: int = Query(
+        None,
+        ge=1,
+        le=1000,
+        description="Return records with id from 1 to limit"
+    ),
+):
     try:
         df = load_data_for_niche(niche)
     except FileNotFoundError as e:
@@ -45,21 +63,10 @@ def get_all_records(niche: str):
     if df.empty:
         raise HTTPException(status_code=500, detail="Dataset not loaded or empty")
 
-    # Return all records (or you can limit here if desired)
-    return df.to_dict(orient="records")
-
-@app.get("/records/{niche}/{end_id}")
-def get_records_upto_id(niche: str, end_id: int):
-    try:
-        df = load_data_for_niche(niche)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    if df.empty:
-        raise HTTPException(status_code=500, detail="Dataset not loaded or empty")
-
-    # Filter rows with id between 1 and end_id (inclusive)
-    filtered_df = df[(df["id"] >= 1) & (df["id"] <= end_id)]
+    if limit is not None:
+        filtered_df = df[(df["id"] >= 1) & (df["id"] <= limit)]
+    else:
+        filtered_df = df
 
     if filtered_df.empty:
         raise HTTPException(status_code=404, detail="No records found in the given range")
